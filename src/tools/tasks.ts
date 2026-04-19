@@ -266,20 +266,30 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
     },
     async (params) => {
       try {
+        // SP's api.addTask() silently ignores tagIds, dueWithTime and remindAt.
+        // Strip them here and apply via a separate updateTask call after creation,
+        // which goes through its own socket round-trip and persists correctly.
         const payload: Record<string, unknown> = { title: params.title };
         if (params.projectId !== undefined) payload.projectId = params.projectId;
         if (params.notes !== undefined) payload.notes = params.notes;
         if (params.timeEstimate !== undefined) payload.timeEstimate = params.timeEstimate;
-        if (params.tagIds !== undefined) payload.tagIds = params.tagIds;
         if (params.parentId !== undefined) payload.parentId = params.parentId;
         if (params.isDone !== undefined) payload.isDone = params.isDone;
         if (params.dueDay !== undefined) payload.dueDay = params.dueDay;
-        if (params.dueWithTime !== undefined) payload.dueWithTime = params.dueWithTime;
         if (params.deadlineDay !== undefined) payload.deadlineDay = params.deadlineDay;
         if (params.deadlineWithTime !== undefined) payload.deadlineWithTime = params.deadlineWithTime;
-        if (params.remindAt !== undefined) payload.remindAt = params.remindAt;
+
+        const postCreateUpdates: Record<string, unknown> = {};
+        if (params.tagIds !== undefined) postCreateUpdates.tagIds = params.tagIds;
+        if (params.dueWithTime !== undefined) postCreateUpdates.dueWithTime = params.dueWithTime;
+        if (params.remindAt !== undefined) postCreateUpdates.remindAt = params.remindAt;
 
         const taskId = await client.createTask(payload);
+
+        if (Object.keys(postCreateUpdates).length > 0) {
+          await client.updateTask(taskId, postCreateUpdates);
+        }
+
         return {
           content: [
             {
@@ -414,6 +424,7 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
         deadlineDay: nullableStr.describe('YYYY-MM-DD or null to clear'),
         deadlineWithTime: nullableNum.describe('Unix epoch ms or null to clear'),
         remindAt: nullableNum.describe('Unix epoch ms or null to clear'),
+        plannedAt: nullableNum.describe('Unix epoch ms when task is planned; null clears (removes from Today)'),
         timeSpent: nullableNum.describe('Total time spent in ms; null clears'),
         doneOn: nullableNum.describe('Timestamp when task was completed; null clears'),
         subTaskIds: z.union([z.array(z.string()), z.null()]).optional().describe('Array of subtask IDs'),
