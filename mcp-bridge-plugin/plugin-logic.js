@@ -132,14 +132,54 @@
     });
 
     socket.on("tasks:create", function (taskData, callback) {
-      api.addTask(taskData)
+      var postCreateUpdates = {};
+      if (taskData.tagIds !== undefined) postCreateUpdates.tagIds = taskData.tagIds;
+      if (taskData.dueWithTime !== undefined) postCreateUpdates.dueWithTime = taskData.dueWithTime;
+      if (taskData.remindAt !== undefined) postCreateUpdates.remindAt = taskData.remindAt;
+
+      // Strip fields api.addTask ignores/mishandles — apply via updateTask instead
+      var addTaskData = {};
+      Object.keys(taskData).forEach(function (k) {
+        if (k !== "tagIds" && k !== "dueWithTime" && k !== "remindAt") {
+          addTaskData[k] = taskData[k];
+        }
+      });
+
+      log("log", "tasks:create postCreateUpdates=" + JSON.stringify(postCreateUpdates));
+
+      api.addTask(addTaskData)
+        .then(function (taskId) {
+          log("log", "addTask resolved taskId=" + taskId);
+          if (Object.keys(postCreateUpdates).length === 0) {
+            return Promise.resolve(taskId);
+          }
+          // Delay 200ms so SP commits the new task to its NgRx store
+          // before updateTask is dispatched (race condition otherwise)
+          return new Promise(function (resolve, reject) {
+            setTimeout(function () {
+              api.updateTask(taskId, postCreateUpdates)
+                .then(function (updateResult) {
+                  log("log", "updateTask resolved taskId=" + taskId + " result=" + JSON.stringify(updateResult));
+                  resolve(taskId);
+                })
+                .catch(reject);
+            }, 200);
+          });
+        })
         .then(function (taskId) { callback(taskId); })
-        .catch(function (err) { callback({ error: err.message || String(err) }); });
+        .catch(function (err) {
+          log("error", "tasks:create error: " + (err && (err.message || String(err))));
+          callback({ error: err.message || String(err) });
+        });
     });
 
     socket.on("tasks:update", function (data, callback) {
+      log("log", "tasks:update taskId=" + data.taskId + " updates=" + JSON.stringify(data.updates));
       api.updateTask(data.taskId, data.updates)
-        .then(function () { callback({ success: true }); })
+        .then(function (result) {
+          log("log", "tasks:update resolved taskId=" + data.taskId + " result=" + JSON.stringify(result));
+          callback({ success: true });
+        })
         .catch(function (err) { callback({ error: err.message || String(err) }); });
     });
 
