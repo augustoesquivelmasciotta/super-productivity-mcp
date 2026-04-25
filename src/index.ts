@@ -265,6 +265,23 @@ program
         });
       });
 
+      // Cache-only handlers. These don't trigger mirror writes — they keep
+      // the listener's `{taskId → scheduled state}` cache fresh so that
+      // transitions on freshly-created/deleted/drag-to-Today'd tasks are
+      // detected correctly when the next taskUpdate arrives.
+      socket.on("event:taskCreated", (payload: unknown) => {
+        try { unscheduleMirror.handleTaskCreated(payload); }
+        catch (err) { tsLog("taskCreated handler error:", oneLine(err)); }
+      });
+      socket.on("event:taskDelete", (payload: unknown) => {
+        try { unscheduleMirror.handleTaskDelete(payload); }
+        catch (err) { tsLog("taskDelete handler error:", oneLine(err)); }
+      });
+      socket.on("event:taskScheduled", (payload: unknown) => {
+        try { unscheduleMirror.handleTaskScheduledForToday(payload); }
+        catch (err) { tsLog("taskScheduled handler error:", oneLine(err)); }
+      });
+
       // Heartbeat events: always logged. They're cheap (one per connect/setup)
       // and tell us at a glance which plugin code is running.
       socket.on("event:debug:startup", (payload: unknown) => {

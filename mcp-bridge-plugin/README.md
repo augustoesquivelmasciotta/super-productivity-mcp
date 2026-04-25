@@ -47,17 +47,25 @@ the plugin emits + per-event detail from `unschedule-mirror`. Off by default.
 
 ## Hooks
 
-We register only `taskUpdate`. We do **not** register `anyTaskUpdate` —
-empirically it does NOT fire for UI scheduling actions
-(`unscheduleTask`, `scheduleTaskWithTime`, `planTaskForDay`, etc.), only for
-generic `addTask/updateTask/deleteTask` redux actions. `taskUpdate` covers
-the scheduling family. Verified 2026-04-25 by registering all 11 SP hooks
-and observing UI drag&drop. See `decisiones.md`.
+Four hooks registered (verified 2026-04-25 against SP 18.2.8):
 
-Known gap: `[Task Shared] planTasksForToday` (drag-to-Today UI action) is not
-covered by `taskUpdate`. Tasks are usually scheduled via `/dia` (MCP path,
-which uses `updateTask` and is covered) or via drag-to-future-day
-(`planTaskForDay`, also covered). The gap is "drag to Today + drag back" in
-the same session for a task whose scheduled state was never recorded by the
-listener cache. If this bites in practice, add `action` hook filtered to
-`planTasksForToday`.
+| Hook | Channel | Purpose |
+|------|---------|---------|
+| `taskUpdate` | `event:taskUpdate` | Schedule/unschedule/reschedule/move/edit. Drives the mirror's transition detection. |
+| `taskCreated` | `event:taskCreated` | New task creation (UI or MCP). Hydrates cache. |
+| `taskDelete` | `event:taskDelete` | Task deletion (single or batch). Cleans cache. |
+| `action` (filtered) | `event:taskScheduled` | Whitelist of redux actions taskUpdate misses. Currently `[Task Shared] planTasksForToday` only. |
+
+We do **not** register `anyTaskUpdate`. It only fires for
+`addTask/updateTask/deleteTask` actions and misses every UI scheduling
+action (`unscheduleTask`, `scheduleTaskWithTime`, `planTaskForDay`, etc.).
+That was the root cause of months of silent unschedule-mirror failures
+on UI drags before 2026-04-25.
+
+We do **not** register `action` unfiltered. SP dispatches dozens of redux
+actions per minute during normal use (panel toggles, work-context switches,
+selection changes); forwarding all of them to the server would explode the
+log and force the listener to filter on every event. The whitelist
+`FORWARDED_ACTIONS` in `plugin-logic.js` is the place to add new entries
+if a future SP version introduces a scheduling action that doesn't flow
+through `taskUpdate`.

@@ -201,6 +201,64 @@ export class UnscheduleMirror {
     return null;
   }
 
+  // taskCreated hook payload: { taskId, task }. We hydrate the cache so a
+  // subsequent unschedule on a freshly-created task is detected as a real
+  // transition (and not skipped because prev was undefined).
+  handleTaskCreated(payload: unknown): void {
+    const task = this.extractTask(payload);
+    if (!task) return;
+    this.cache.set(task.id, {
+      dueDay: task.dueDay ?? null,
+      dueWithTime: task.dueWithTime ?? null,
+    });
+    if (DEBUG_EVENTS) {
+      tsLog(`[taskCreated] cached id=${task.id} dueDay=${task.dueDay ?? 'null'}/${task.dueWithTime ?? 'null'}`);
+    }
+  }
+
+  // taskDelete hook payload: { taskId } (single) or { taskIds: [...] } (batch).
+  // We strip from the cache so deleted ids don't linger as zombies.
+  handleTaskDelete(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const p = payload as any;
+    const ids: string[] = [];
+    if (typeof p.taskId === 'string') ids.push(p.taskId);
+    if (Array.isArray(p.taskIds)) {
+      for (const id of p.taskIds) if (typeof id === 'string') ids.push(id);
+    }
+    for (const id of ids) {
+      this.cache.delete(id);
+      this.inFlight.delete(id);
+    }
+    if (DEBUG_EVENTS && ids.length) {
+      tsLog(`[taskDelete] purged ${ids.length} id(s) from cache: ${ids.join(',')}`);
+    }
+  }
+
+  // `[Task Shared] planTasksForToday` action payload (filtered by plugin):
+  //   { action: { taskIds, parentTaskMap, isShowSnack, meta } }
+  // The action does NOT flow through the taskUpdate hook (the only known gap),
+  // so we listen to it via the filtered action hook and update the cache to
+  // reflect the new scheduled state. Without this, a drag-to-Today + drag-back
+  // sequence in the same session would have stale cache and miss the unschedule.
+  handleTaskScheduledForToday(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const action = (payload as any).action;
+    if (!action || !Array.isArray(action.taskIds)) return;
+    const today = new Date().toISOString().slice(0, 10);
+    for (const id of action.taskIds) {
+      if (typeof id !== 'string') continue;
+      const prev = this.cache.get(id);
+      this.cache.set(id, {
+        dueDay: today,
+        dueWithTime: prev?.dueWithTime ?? null,
+      });
+    }
+    if (DEBUG_EVENTS) {
+      tsLog(`[planTasksForToday] cached ${action.taskIds.length} id(s) as scheduled to ${today}`);
+    }
+  }
+
   async handleEvent(payload: unknown): Promise<void> {
     const task = this.extractTask(payload);
     if (!task) {

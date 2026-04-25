@@ -2,11 +2,14 @@
   "name": "MCP Bridge",
   "id": "mcp-bridge",
   "manifestVersion": 1,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "minSupVersion": "14.0.0",
   "description": "Bridge between Super Productivity and MCP servers",
   "hooks": [
-    "taskUpdate"
+    "taskUpdate",
+    "taskCreated",
+    "taskDelete",
+    "action"
   ],
   "permissions": [
     "tasks:read",

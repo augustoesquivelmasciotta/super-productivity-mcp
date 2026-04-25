@@ -50,7 +50,7 @@
       );
       // Heartbeat: emit version stamp on connect. Server logs this so we can
       // always tell which plugin code is actually running. Cheap; do not remove.
-      socket.emit("event:debug:startup", { version: "1.0.5", socketId: socket.id });
+      socket.emit("event:debug:startup", { version: "1.0.6", socketId: socket.id });
     });
 
     socket.on("disconnect", function (reason, details) {
@@ -353,36 +353,70 @@
 
     // --- Event Hooks (Plugin -> Server) ---
     //
-    // Why `taskUpdate` and not `anyTaskUpdate`:
-    //   anyTaskUpdate$ effect listens to addTask/updateTask/deleteTask only.
-    //   It does NOT fire for UI scheduling actions (unscheduleTask,
-    //   scheduleTaskWithTime, planTaskForDay, transferTask, moveToOtherProject).
-    //   taskUpdate$ effect DOES listen to all of those. Empirically verified
-    //   2026-04-25 by registering every hook SP exposes and observing which
-    //   ones fired on UI drag&drop. See decisiones.md.
+    // We register four hooks. The first three give the listener enough
+    // information to maintain an accurate `{taskId → scheduled state}` cache
+    // across all common UI/MCP operations. The fourth (action filtered)
+    // closes a known gap in taskUpdate.
     //
-    // Known gap: `[Task Shared] planTasksForToday` (the action emitted when
-    // dragging a task TO Today) does NOT trigger taskUpdate. If we miss it,
-    // the listener cache stays stale and a subsequent unschedule of that
-    // same task in the same session won't be detected as a transition. In
-    // practice, tasks are usually scheduled via /dia (MCP -> updateTask,
-    // which DOES fire taskUpdate) or via drag-to-future-day (planTaskForDay,
-    // also fires). Living with the gap; revisit if it bites.
+    // 1. taskUpdate -> event:taskUpdate
+    //    Fires for unscheduleTask, scheduleTaskWithTime, reScheduleTaskWithTime,
+    //    planTaskForDay, transferTask, moveToOtherProject, generic updateTask.
+    //    Does NOT fire for [Task Shared] planTasksForToday (drag to Today).
+    //    Why this hook (not anyTaskUpdate): anyTaskUpdate$ effect only listens
+    //    to addTask/updateTask/deleteTask, missing all the scheduling actions
+    //    above. Empirically verified 2026-04-25.
     //
-    // Channel `event:taskUpdate` matches the server's existing socket.on
-    // listener so payload routing keeps working. Payload shape changes:
-    //   - old (anyTaskUpdate): { action, task, taskId, taskState }
-    //   - new (taskUpdate):    { taskId, task, changes }
-    // unschedule-mirror.extractTask handles both shapes.
+    // 2. taskCreated -> event:taskCreated
+    //    Fires on every new task creation (UI or MCP). Hydrates the cache so
+    //    transitions on freshly-created tasks are detected correctly.
+    //
+    // 3. taskDelete -> event:taskDelete
+    //    Fires on task deletion (single or batch). Cleans the cache so deleted
+    //    task IDs don't linger as zombies.
+    //
+    // 4. action -> event:taskScheduled (FILTERED)
+    //    Fires for every redux action in SP — way too noisy to forward unfiltered
+    //    (during the all-hooks experiment we saw ~30 events from <1min of normal
+    //    UI use: SetSelectedTask, layout panel toggles, work-context switches,
+    //    tag updates, etc.). Plugin filters to a strict whitelist before
+    //    emitting. Currently the only entry is "[Task Shared] planTasksForToday"
+    //    (the drag-to-Today action that taskUpdate misses). Add more entries
+    //    here if a future SP version introduces a scheduling action that doesn't
+    //    flow through taskUpdate.
+    //
+    // Channel naming kept stable so the server's existing socket.on listeners
+    // don't have to be updated for every new hook we add.
     var hookRegistration = { ok: [], err: {} };
-    try {
-      api.registerHook("taskUpdate", function (payload) {
-        socket.emit("event:taskUpdate", payload);
-      });
-      hookRegistration.ok.push("taskUpdate");
-    } catch (err) {
-      hookRegistration.err["taskUpdate"] = String(err && err.message || err);
+    function tryRegister(hookName, fn) {
+      try {
+        api.registerHook(hookName, fn);
+        hookRegistration.ok.push(hookName);
+      } catch (err) {
+        hookRegistration.err[hookName] = String(err && err.message || err);
+      }
     }
+
+    tryRegister("taskUpdate", function (payload) {
+      socket.emit("event:taskUpdate", payload);
+    });
+    tryRegister("taskCreated", function (payload) {
+      socket.emit("event:taskCreated", payload);
+    });
+    tryRegister("taskDelete", function (payload) {
+      socket.emit("event:taskDelete", payload);
+    });
+
+    // Whitelist of redux action types we want forwarded. Keep tight.
+    var FORWARDED_ACTIONS = {
+      "[Task Shared] planTasksForToday": true,
+    };
+    tryRegister("action", function (payload) {
+      var type = payload && payload.action && payload.action.type;
+      if (type && FORWARDED_ACTIONS[type]) {
+        socket.emit("event:taskScheduled", payload);
+      }
+    });
+
     // Lightweight summary so the server log shows which hooks SP accepted.
     // Helps diagnose breakage on SP version upgrades.
     setTimeout(function () {
