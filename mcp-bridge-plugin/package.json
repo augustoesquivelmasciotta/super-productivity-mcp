@@ -1,10 +1,12 @@
 {
   "name": "mcp-bridge-plugin",
-  "version": "1.0.1",
+  "version": "1.0.5",
   "description": "Bridge between Super Productivity and MCP servers",
   "main": "dist/plugin.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "build:plugin": "cat socket.io.min.js plugin-logic.js > plugin.js",
+    "package": "npm run build:plugin && cd .. && rm -f mcp-bridge-plugin.zip && cd mcp-bridge-plugin && zip -q -r ../mcp-bridge-plugin.zip manifest.json plugin.js plugin-logic.js socket.io.min.js"
   },
   "keywords": [
     "super-productivity",

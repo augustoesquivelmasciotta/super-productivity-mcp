@@ -265,6 +265,25 @@ program
         });
       });
 
+      // Heartbeat events: always logged. They're cheap (one per connect/setup)
+      // and tell us at a glance which plugin code is running.
+      socket.on("event:debug:startup", (payload: unknown) => {
+        tsLog(`[plugin-heartbeat] startup ${oneLine(payload)}`);
+      });
+      socket.on("event:debug:hooksRegistered", (payload: unknown) => {
+        tsLog(`[plugin-heartbeat] hooks registered ${oneLine(payload)}`);
+      });
+
+      // Verbose tracing: every event (including hook payloads) gets logged.
+      // Off by default. Toggle SP_MCP_DEBUG_EVENTS=1 in the launchd plist
+      // when diagnosing why a hook didn't fire / a transition was missed.
+      if (process.env.SP_MCP_DEBUG_EVENTS === "1") {
+        socket.onAny((eventName: string, ...args: unknown[]) => {
+          const preview = JSON.stringify(args).slice(0, 250);
+          tsLog(`[any-event] name=${eventName} args=${preview}`);
+        });
+      }
+
       socket.conn?.once("upgrade", () => {
         tsLog(
           "Super Productivity plugin transport upgraded:",

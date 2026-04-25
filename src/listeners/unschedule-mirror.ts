@@ -12,6 +12,12 @@
 //
 // Wiring lives in src/index.ts: on each socket connection, registers
 // `socket.on('event:taskUpdate', ...)` and seeds the cache via spClient.getTasks().
+//
+// Payload shape (from SP `taskUpdate` hook): { taskId, task, changes }. Older
+// shape was { action, task, taskId, taskState } from anyTaskUpdate; extractTask
+// handles both via the `p.task && p.task.id` branch. We migrated from
+// anyTaskUpdate to taskUpdate on 2026-04-25 because anyTaskUpdate doesn't
+// listen to UI scheduling actions (unscheduleTask, etc.). See decisiones.md.
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
@@ -59,6 +65,11 @@ interface SPClient {
 function tsLog(...parts: unknown[]): void {
   console.log(`[${new Date().toISOString()}] [unschedule-mirror]`, ...parts);
 }
+
+// Verbose per-event tracing. Off by default to keep the log clean. Toggle
+// SP_MCP_DEBUG_EVENTS=1 in launchd plist (then restart the daemon) when
+// diagnosing why a transition didn't fire as expected.
+const DEBUG_EVENTS = process.env.SP_MCP_DEBUG_EVENTS === "1";
 
 function isScheduled(t: TaskLite): boolean {
   return !!(t.dueDay || t.dueWithTime);
@@ -201,6 +212,15 @@ export class UnscheduleMirror {
     const prev = this.cache.get(task.id);
     const wasScheduled = prev ? !!(prev.dueDay || prev.dueWithTime) : false;
     const nowScheduled = isScheduled(task);
+
+    if (DEBUG_EVENTS) {
+      tsLog(
+        `[event] id=${task.id} title="${(task.title || '').slice(0, 40)}" ` +
+        `prev=${prev ? `${prev.dueDay}/${prev.dueWithTime}` : 'none'} ` +
+        `now=${task.dueDay ?? 'null'}/${task.dueWithTime ?? 'null'} ` +
+        `wasScheduled=${wasScheduled} nowScheduled=${nowScheduled}`,
+      );
+    }
 
     // Always update cache after deciding.
     const updateCache = () => {
