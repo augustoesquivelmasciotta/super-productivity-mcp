@@ -23,7 +23,7 @@ const PROJECT_TO_BACKLOG: Record<string, string> = {
   'cHcv2nWbtfIaoZ-LUCAL5': 'tlon',
   'fLlNKgfND3nEQx6Y6511V': 'mc',
   'vSJoky02vwSTglObEFYi0': 'comms',
-  'pBnSCr1M9xoTt8z_KPeun': 'fieldbuilding',
+  'pBnSCr1M9xoTt8z_KPeun': 'community',
   'XwwN-omNPWWeoWM_ETaR1': 'misc',
   'kKVR_zz9ct-NLTiu8d66M': 'hsl',
   'cZD26eFBOFvdNzlOTcoed': 'hsa',
