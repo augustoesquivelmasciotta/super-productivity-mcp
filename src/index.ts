@@ -18,6 +18,7 @@ import { setupTagTools } from "./tools/tags.js";
 import { setupCounterTools } from "./tools/counters.js";
 import { setupDataTools } from "./tools/data.js";
 import { setupMiscTools } from "./tools/misc.js";
+import { UnscheduleMirror } from "./listeners/unschedule-mirror.js";
 
 function tsLog(...parts: unknown[]): void {
   console.log(`[${new Date().toISOString()}]`, ...parts);
@@ -227,6 +228,8 @@ program
 
     app.use(express.json());
 
+    const unscheduleMirror = new UnscheduleMirror(spClient);
+
     io.engine.on("connection_error", (err) => {
       tsLog(
         "Socket.IO engine connection error:",
@@ -250,6 +253,17 @@ program
         `userAgent=${userAgent || "unknown"}`,
       );
       spClient.setSocket(socket);
+
+      // Seed the unschedule mirror cache so we don't fire on tasks that were
+      // already unscheduled before the connection opened. Don't await — let it
+      // run in background so socket setup doesn't block.
+      unscheduleMirror.seed().catch(() => {});
+
+      socket.on("event:taskUpdate", (payload: unknown) => {
+        unscheduleMirror.handleEvent(payload).catch((err) => {
+          tsLog("unschedule mirror handler error:", oneLine(err));
+        });
+      });
 
       socket.conn?.once("upgrade", () => {
         tsLog(

@@ -1,0 +1,259 @@
+// Mirrors SP "unschedule" actions into ~/Documents/Áreas/Planificación/backlog/*.md.
+//
+// When a task's dueDay AND dueWithTime both transition to null (from at least one
+// being set), the task is appended to the corresponding backlog file under
+// `## Inbox auto (de SP)` → `### Unscheduled (era today, sin tiempo)`, then deleted
+// from SP. Estructura tasks (daily routines that /dia recreates) are deleted
+// without mirror. Inbox/Resources tasks are ignored.
+//
+// Order of ops is verify-before-delete: write → re-read file and grep for the SP
+// id → only then delete from SP. If verification fails, the task stays in SP
+// unscheduled and the next event re-tries (idempotent by SP id grep).
+//
+// Wiring lives in src/index.ts: on each socket connection, registers
+// `socket.on('event:taskUpdate', ...)` and seeds the cache via spClient.getTasks().
+
+import { promises as fs } from 'fs';
+import * as path from 'path';
+
+const BACKLOG_DIR = '/Users/augus/Documents/Áreas/Planificación/backlog';
+
+// projectId → backlog file slug. Source of truth: setup-tecnico-sp.md.
+const PROJECT_TO_BACKLOG: Record<string, string> = {
+  'cHcv2nWbtfIaoZ-LUCAL5': 'tlon',
+  'fLlNKgfND3nEQx6Y6511V': 'mc',
+  'vSJoky02vwSTglObEFYi0': 'comms',
+  'pBnSCr1M9xoTt8z_KPeun': 'fieldbuilding',
+  'XwwN-omNPWWeoWM_ETaR1': 'misc',
+  'kKVR_zz9ct-NLTiu8d66M': 'hsl',
+  'cZD26eFBOFvdNzlOTcoed': 'hsa',
+  'MrpohgHg4BGSbugB3LRCI': 'alg',
+  '3Wr6SeZ1RvnDse0pKKKcO': 'fis',
+  'NhZjvcWRcPlmlzGKYl9vj': 'asa',
+  'GPPx5PiB3fIDS7FVCgOsZ': 'so',
+  '3UpjaXQln228fds8_o6va': 'tsc-a',
+};
+
+const ESTRUCTURA_PROJECT_ID = 'pjhVh1Dz8L-7xHP_ehm4E'; // delete without mirror
+const INBOX_PROJECT_ID = 'INBOX_PROJECT';                // skip (no schedule to lose)
+const RESOURCES_PROJECT_ID = '41Ap_QZLRYCAtO7DxSCFX';   // skip (not tasks)
+const SKIP_PROJECT_IDS = new Set([INBOX_PROJECT_ID, RESOURCES_PROJECT_ID]);
+
+const SECTION_HEADER = '## Inbox auto (de SP)';
+const SUBSECTION_HEADER = '### Unscheduled (era today, sin tiempo)';
+
+interface TaskLite {
+  id: string;
+  title: string;
+  projectId?: string;
+  dueDay?: string | null;
+  dueWithTime?: number | null;
+  notes?: string | null;
+}
+
+interface SPClient {
+  getTasks(): Promise<TaskLite[]>;
+  deleteTask(taskId: string): Promise<void>;
+}
+
+function tsLog(...parts: unknown[]): void {
+  console.log(`[${new Date().toISOString()}] [unschedule-mirror]`, ...parts);
+}
+
+function isScheduled(t: TaskLite): boolean {
+  return !!(t.dueDay || t.dueWithTime);
+}
+
+function backlogPathFor(projectId: string | undefined): string | null {
+  if (!projectId) return null;
+  const slug = PROJECT_TO_BACKLOG[projectId];
+  return slug ? path.join(BACKLOG_DIR, `backlog-${slug}.md`) : null;
+}
+
+// Single line containing the SP id, used for idempotency grep.
+function entryFor(task: TaskLite): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const title = task.title.replace(/\n/g, ' ').trim();
+  const noteLine = (task.notes || '').replace(/\n/g, ' ').trim();
+  const noteSuffix = noteLine ? `. ${noteLine}` : '';
+  return `- ${title}\n  > Unscheduled de SP el ${today}. SP id: ${task.id}${noteSuffix}\n`;
+}
+
+// Look for "SP id: <id>" anywhere in the file.
+function alreadyMirrored(fileContents: string, taskId: string): boolean {
+  return fileContents.includes(`SP id: ${taskId}`);
+}
+
+// Append the entry under the right subsection. Creates section/subsection if missing.
+async function appendToBacklog(filePath: string, task: TaskLite): Promise<void> {
+  let contents: string;
+  try {
+    contents = await fs.readFile(filePath, 'utf8');
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      // Backlog file doesn't exist → bootstrap it. Should be rare; backlogs are
+      // created by hand. We log and bail rather than create silently.
+      throw new Error(`backlog file does not exist: ${filePath}`);
+    }
+    throw err;
+  }
+
+  if (alreadyMirrored(contents, task.id)) {
+    tsLog(`already mirrored, skipping write for ${task.id} (${task.title})`);
+    return;
+  }
+
+  const entry = entryFor(task);
+  let updated: string;
+
+  if (contents.includes(SUBSECTION_HEADER)) {
+    // Insert right after the subsection header line.
+    updated = contents.replace(
+      SUBSECTION_HEADER,
+      `${SUBSECTION_HEADER}\n${entry}`
+    );
+  } else if (contents.includes(SECTION_HEADER)) {
+    // Section exists but subsection doesn't — add subsection then entry.
+    updated = contents.replace(
+      SECTION_HEADER,
+      `${SECTION_HEADER}\n\n${SUBSECTION_HEADER}\n${entry}`
+    );
+  } else {
+    // Append section + subsection + entry at the end (before Someday/Maybe if present).
+    const block = `\n${SECTION_HEADER}\n\n${SUBSECTION_HEADER}\n${entry}`;
+    if (contents.includes('## Someday/Maybe')) {
+      updated = contents.replace('## Someday/Maybe', `${block}\n## Someday/Maybe`);
+    } else {
+      updated = contents.endsWith('\n') ? contents + block : contents + '\n' + block;
+    }
+  }
+
+  await fs.writeFile(filePath, updated, 'utf8');
+}
+
+// Re-read file and confirm the SP id is present. Returns true if found.
+async function verifyMirror(filePath: string, taskId: string): Promise<boolean> {
+  const contents = await fs.readFile(filePath, 'utf8');
+  return alreadyMirrored(contents, taskId);
+}
+
+export class UnscheduleMirror {
+  private cache: Map<string, { dueDay: string | null; dueWithTime: number | null }> = new Map();
+  private inFlight: Set<string> = new Set(); // prevent re-entrancy on the same id
+  private spClient: SPClient;
+
+  constructor(spClient: SPClient) {
+    this.spClient = spClient;
+  }
+
+  // Seed cache so we don't fire on tasks that were already unscheduled before
+  // the server started. Called on each plugin connection.
+  async seed(): Promise<void> {
+    try {
+      const tasks = await this.spClient.getTasks();
+      this.cache.clear();
+      for (const t of tasks) {
+        this.cache.set(t.id, {
+          dueDay: t.dueDay ?? null,
+          dueWithTime: t.dueWithTime ?? null,
+        });
+      }
+      tsLog(`seeded cache with ${tasks.length} tasks`);
+    } catch (err: any) {
+      tsLog(`seed failed: ${err.message ?? err}`);
+    }
+  }
+
+  // anyTaskUpdate payloads are heterogeneous depending on SP version: sometimes
+  // the full task, sometimes { task }, sometimes { taskChanges, task }. We try
+  // a few shapes; if none match, we log and skip — the next event for the same
+  // task will likely have a usable shape.
+  private extractTask(payload: unknown): TaskLite | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const p = payload as any;
+    if (p.id && typeof p.id === 'string' && 'title' in p) return p as TaskLite;
+    if (p.task && typeof p.task === 'object' && p.task.id) return p.task as TaskLite;
+    return null;
+  }
+
+  async handleEvent(payload: unknown): Promise<void> {
+    const task = this.extractTask(payload);
+    if (!task) {
+      tsLog('skipping event: could not extract task from payload', JSON.stringify(payload).slice(0, 200));
+      return;
+    }
+    if (this.inFlight.has(task.id)) return;
+
+    const prev = this.cache.get(task.id);
+    const wasScheduled = prev ? !!(prev.dueDay || prev.dueWithTime) : false;
+    const nowScheduled = isScheduled(task);
+
+    // Always update cache after deciding.
+    const updateCache = () => {
+      this.cache.set(task.id, {
+        dueDay: task.dueDay ?? null,
+        dueWithTime: task.dueWithTime ?? null,
+      });
+    };
+
+    if (!wasScheduled || nowScheduled) {
+      updateCache();
+      return; // not an unschedule transition
+    }
+
+    // wasScheduled && !nowScheduled → unschedule transition
+    this.inFlight.add(task.id);
+    try {
+      await this.handleUnschedule(task);
+    } catch (err: any) {
+      tsLog(`handleUnschedule failed for ${task.id} (${task.title}): ${err.message ?? err}`);
+    } finally {
+      this.inFlight.delete(task.id);
+      updateCache();
+    }
+  }
+
+  private async handleUnschedule(task: TaskLite): Promise<void> {
+    // Estructura: routines, /dia recreates them. Delete without mirror.
+    if (task.projectId === ESTRUCTURA_PROJECT_ID) {
+      tsLog(`Estructura task unscheduled, deleting without mirror: ${task.id} (${task.title})`);
+      await this.spClient.deleteTask(task.id);
+      this.cache.delete(task.id);
+      return;
+    }
+
+    // Inbox / Resources: skip (Inbox tasks aren't meant to carry schedule state;
+    // Resources aren't tasks).
+    if (task.projectId && SKIP_PROJECT_IDS.has(task.projectId)) {
+      tsLog(`skip-list project, ignoring: ${task.id} (${task.title})`);
+      return;
+    }
+
+    const filePath = backlogPathFor(task.projectId);
+    if (!filePath) {
+      tsLog(
+        `no backlog mapped for projectId=${task.projectId ?? 'undefined'}; ` +
+        `task ${task.id} stays in SP unscheduled. Add mapping in unschedule-mirror.ts.`
+      );
+      return;
+    }
+
+    // Step 1: write
+    await appendToBacklog(filePath, task);
+
+    // Step 2: verify
+    const ok = await verifyMirror(filePath, task.id);
+    if (!ok) {
+      tsLog(
+        `verify failed: SP id ${task.id} not found in ${filePath} after write. ` +
+        `Aborting delete; task stays in SP unscheduled.`
+      );
+      return;
+    }
+
+    // Step 3: delete from SP
+    await this.spClient.deleteTask(task.id);
+    this.cache.delete(task.id);
+    tsLog(`mirrored ${task.id} (${task.title}) → ${path.basename(filePath)} and deleted from SP`);
+  }
+}
