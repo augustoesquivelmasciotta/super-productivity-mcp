@@ -38,6 +38,7 @@ const PROJECT_TO_BACKLOG: Record<string, string> = {
   'NhZjvcWRcPlmlzGKYl9vj': 'asa',
   'GPPx5PiB3fIDS7FVCgOsZ': 'so',
   '3UpjaXQln228fds8_o6va': 'tsc-a',
+  'V28uij7JjFFgcFCtfnR1h': 'social',
 };
 
 const ESTRUCTURA_PROJECT_ID = 'pjhVh1Dz8L-7xHP_ehm4E'; // delete without mirror
