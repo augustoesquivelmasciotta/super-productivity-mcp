@@ -79,9 +79,23 @@ function entryFor(task: TaskLite): string {
   return `- ${title}\n  > Unscheduled de SP el ${today}. SP id: ${task.id}${noteSuffix}\n`;
 }
 
-// Look for "SP id: <id>" anywhere in the file.
+// Match a canonical mirror line for this task id, NOT just any occurrence of
+// "SP id: <id>" in the file. The substring could appear inside a user note
+// (extremely unlikely for 21-char random ids, but possible) and a loose match
+// would let verifyMirror pass on a write that silently failed → task deleted
+// from SP without being saved. The regex anchors to our entry shape:
+//   `  > Unscheduled de SP el YYYY-MM-DD. SP id: <id>(. <notes>|<eol>)`
+// so only lines actually written by this listener qualify.
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function alreadyMirrored(fileContents: string, taskId: string): boolean {
-  return fileContents.includes(`SP id: ${taskId}`);
+  const re = new RegExp(
+    `^  > Unscheduled de SP el \\d{4}-\\d{2}-\\d{2}\\. SP id: ${escapeRegex(taskId)}(?:$|\\.)`,
+    'm'
+  );
+  return re.test(fileContents);
 }
 
 // Append the entry under the right subsection. Creates section/subsection if missing.
