@@ -25,19 +25,27 @@ import * as path from 'path';
 const BACKLOG_DIR = '/Users/augus/Documents/Áreas/Planificación/backlog';
 
 // projectId → backlog file slug. Source of truth: setup-tecnico-sp.md.
+//
+// Materias (HSL/HSA/ALG/FIS/ASA/SO/TSC-A + "Materias generales") all mirror
+// to a single backlog-materias.md (decisión 2026-04-30: backlogs por materia
+// fueron consolidados en commit 044b787; los proyectos SP siguen separados
+// por materia en el sidebar pero comparten sumidero). "Materias generales"
+// es el sub-proyecto para tareas cross-materia (ej. "pre-clase semana
+// próxima — multiple textos").
 const PROJECT_TO_BACKLOG: Record<string, string> = {
   'cHcv2nWbtfIaoZ-LUCAL5': 'tlon',
   'fLlNKgfND3nEQx6Y6511V': 'mc',
   'vSJoky02vwSTglObEFYi0': 'comms',
   'pBnSCr1M9xoTt8z_KPeun': 'community',
   'XwwN-omNPWWeoWM_ETaR1': 'misc',
-  'kKVR_zz9ct-NLTiu8d66M': 'hsl',
-  'cZD26eFBOFvdNzlOTcoed': 'hsa',
-  'MrpohgHg4BGSbugB3LRCI': 'alg',
-  '3Wr6SeZ1RvnDse0pKKKcO': 'fis',
-  'NhZjvcWRcPlmlzGKYl9vj': 'asa',
-  'GPPx5PiB3fIDS7FVCgOsZ': 'so',
-  '3UpjaXQln228fds8_o6va': 'tsc-a',
+  'kKVR_zz9ct-NLTiu8d66M': 'materias', // hsl
+  'cZD26eFBOFvdNzlOTcoed': 'materias', // hsa
+  'MrpohgHg4BGSbugB3LRCI': 'materias', // alg
+  '3Wr6SeZ1RvnDse0pKKKcO': 'materias', // fis
+  'NhZjvcWRcPlmlzGKYl9vj': 'materias', // asa
+  'GPPx5PiB3fIDS7FVCgOsZ': 'materias', // so
+  '3UpjaXQln228fds8_o6va': 'materias', // tsc-a
+  'GUV8T1Wh53bGVsJbAtAFK': 'materias', // materias generales (cross-materia)
   'V28uij7JjFFgcFCtfnR1h': 'social',
 };
 
