@@ -510,13 +510,36 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
   server.registerTool(
     'delete_task',
     {
-      description: '⚠️ Permanently deletes a task. This action cannot be undone.',
+      description: '⚠️ Permanently deletes a task. This action cannot be undone. Idempotent: returns success with skipped:true if the task is already gone.',
       inputSchema: {
         taskId: z.string().describe('Task ID to delete permanently'),
       },
     },
     async ({ taskId }) => {
       try {
+        // SP corruption guard: api.deleteTask(<non-existent-id>) corrupts the
+        // renderer's task slice (~100 unrelated parent tasks silently vanish
+        // from active state, leaving project.taskIds and subtasks as orphans —
+        // signature documented in decisiones.md 2026-04-30). The trigger is
+        // delete-of-parent followed by delete-of-its-sub-already-cascaded in
+        // rapid succession. Pre-check existence so we never invoke deleteTask
+        // on a missing id, even when concurrent calls created the gap.
+        const tasks = await client.getTasks();
+        const exists = (tasks as Array<{ id?: string }>).some((t) => t?.id === taskId);
+        if (!exists) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  skipped: true,
+                  message: `Task ${taskId} already gone (cascade-deleted by parent or prior op)`,
+                }),
+              },
+            ],
+          };
+        }
         await client.deleteTask(taskId);
         return {
           content: [
