@@ -26,12 +26,10 @@ const BACKLOG_DIR = '/Users/augus/Documents/Áreas/Planificación/backlog';
 
 // projectId → backlog file slug. Source of truth: setup-tecnico-sp.md.
 //
-// Materias (HSL/HSA/ALG/FIS/ASA/SO/TSC-A + "Materias generales") all mirror
-// to a single backlog-materias.md (decisión 2026-04-30: backlogs por materia
-// fueron consolidados en commit 044b787; los proyectos SP siguen separados
-// por materia en el sidebar pero comparten sumidero). "Materias generales"
-// es el sub-proyecto para tareas cross-materia (ej. "pre-clase semana
-// próxima — multiple textos").
+// "Materias generales" is the single SP project for all subjects since
+// 2026-05-02 (the 7 per-materia projects HSL/HSA/ALG/FIS/ASA/SO/TSC-A were
+// archived — they were empty in practice). Mirrors to backlog-materias.md
+// (backlogs consolidated 2026-04-30, commit 044b787).
 const PROJECT_TO_BACKLOG: Record<string, string> = {
   'cHcv2nWbtfIaoZ-LUCAL5': 'tlon',
   'fLlNKgfND3nEQx6Y6511V': 'mc',
