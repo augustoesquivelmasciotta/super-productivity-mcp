@@ -38,14 +38,7 @@ const PROJECT_TO_BACKLOG: Record<string, string> = {
   'vSJoky02vwSTglObEFYi0': 'comms',
   'pBnSCr1M9xoTt8z_KPeun': 'community',
   'XwwN-omNPWWeoWM_ETaR1': 'misc',
-  'kKVR_zz9ct-NLTiu8d66M': 'materias', // hsl
-  'cZD26eFBOFvdNzlOTcoed': 'materias', // hsa
-  'MrpohgHg4BGSbugB3LRCI': 'materias', // alg
-  '3Wr6SeZ1RvnDse0pKKKcO': 'materias', // fis
-  'NhZjvcWRcPlmlzGKYl9vj': 'materias', // asa
-  'GPPx5PiB3fIDS7FVCgOsZ': 'materias', // so
-  '3UpjaXQln228fds8_o6va': 'materias', // tsc-a
-  'GUV8T1Wh53bGVsJbAtAFK': 'materias', // materias generales (cross-materia)
+  '4NY3UjG90CnR4PSs3WHEi': 'materias', // materias generales (único proyecto desde 2026-05-02)
   'V28uij7JjFFgcFCtfnR1h': 'social',
 };
 
