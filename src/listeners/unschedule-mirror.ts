@@ -38,6 +38,7 @@ const PROJECT_TO_BACKLOG: Record<string, string> = {
   'XwwN-omNPWWeoWM_ETaR1': 'misc',
   '4NY3UjG90CnR4PSs3WHEi': 'materias', // materias generales (único proyecto desde 2026-05-02)
   'V28uij7JjFFgcFCtfnR1h': 'social',
+  'sX57Skcu899Oo3htOLIuT': 'frontier-governance', // creado 2026-05-06 — BAISH × BlueDot
 };
 
 const ESTRUCTURA_PROJECT_ID = 'pjhVh1Dz8L-7xHP_ehm4E'; // delete without mirror
