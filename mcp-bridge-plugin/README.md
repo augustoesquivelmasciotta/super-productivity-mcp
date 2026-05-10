@@ -16,7 +16,6 @@ happen again.
 - `socket.io.min.js` — vendored library. Don't edit.
 - `manifest.json` — SP plugin metadata. Bump `version` on every release.
 - `plugin.js` — **built artifact**. Don't edit by hand. Regenerate via build script.
-- `plugin.ts` — historical, unused. Kept for reference; not part of the build.
 
 ## Build
 

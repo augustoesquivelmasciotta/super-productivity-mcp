@@ -54,9 +54,7 @@ The app loads files from your profile (e.g. `~/.config/superProductivity/plugins
 
    That writes `mcp-bridge-plugin.zip` at the repository root (ignored by Git). Install it in Super Productivity, or unzip over `plugins/mcp-bridge/` yourself.
 
-3. **`plugin.ts`** in the repo is not what Electron runs; the shipped script is **`plugin.js`**. Rebuild `plugin.js` yourself only if you maintain a separate build pipeline.
-
-4. If **`manifest.json` `version`** changed, the app may show an update depending on Super Productivity’s plugin UI.
+3. If **`manifest.json` `version`** changed, the app may show an update depending on Super Productivity’s plugin UI.
 
 ## Verify
 
