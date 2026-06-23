@@ -117,6 +117,8 @@ export function setupProjectTools(server: McpServer, client: SuperProductivityCl
         icon: z.string().nullable().optional().describe("Project icon identifier"),
         isEnableBacklog: z.boolean().optional().describe("Enable backlog feature"),
         isHiddenFromMenu: z.boolean().optional().describe("Hide project from sidebar menu"),
+        taskIds: z.array(z.string()).optional().describe("Ordered IDs of tasks in the project's main list (today/active area). Pass to reorder or to move tasks between taskIds and backlogTaskIds."),
+        backlogTaskIds: z.array(z.string()).optional().describe("Ordered IDs of tasks in the project's backlog list. Requires isEnableBacklog=true to be visible."),
       },
     },
     async ({ projectId, ...updates }) => {
