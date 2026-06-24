@@ -30,15 +30,19 @@ const BACKLOG_DIR = '/Users/augus/Documents/Áreas/Planificación/backlog';
 // 2026-05-02 (the 7 per-materia projects HSL/HSA/ALG/FIS/ASA/SO/TSC-A were
 // archived — they were empty in practice). Mirrors to backlog-materias.md
 // (backlogs consolidated 2026-04-30, commit 044b787).
+//
+// Tlön, Comms and Frontier Governance left the mirror on 2026-06-23: their
+// backlogs migrated from .md to SP `backlogTaskIds`, so SP is now their source
+// of truth. Unscheduling those projects just leaves the task in SP's active
+// list (no .md mirror); /dia triage moves it back via sp.move_to_backlog. Keep
+// this set equal to _MIRRORED_PROJECTS in sp.py; do not re-add without
+// reverting the migration. See decisiones.md 2026-06-23 / setup-tecnico-sp.md.
 const PROJECT_TO_BACKLOG: Record<string, string> = {
-  'cHcv2nWbtfIaoZ-LUCAL5': 'tlon',
   'fLlNKgfND3nEQx6Y6511V': 'mc',
-  'vSJoky02vwSTglObEFYi0': 'comms',
   'pBnSCr1M9xoTt8z_KPeun': 'community',
   'XwwN-omNPWWeoWM_ETaR1': 'misc',
   '4NY3UjG90CnR4PSs3WHEi': 'materias', // materias generales (único proyecto desde 2026-05-02)
   'V28uij7JjFFgcFCtfnR1h': 'social',
-  'sX57Skcu899Oo3htOLIuT': 'frontier-governance', // creado 2026-05-06 — BAISH × BlueDot
 };
 
 const ESTRUCTURA_PROJECT_ID = 'pjhVh1Dz8L-7xHP_ehm4E'; // delete without mirror
