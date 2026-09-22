@@ -1,3 +1,41 @@
+// ============================================================================
+// DISABLED 2026-09-22 — campaign propose-20260922-173950
+// ============================================================================
+//
+// Este listener ESTA APAGADO. No corre: su wiring en src/index.ts
+// (construccion + seed + los cuatro socket.on("event:task{Update,Created,
+// Delete,Scheduled}")) fue removido y el import quedo comentado, asi que
+// handleEvent() — unico llamador de handleUnschedule() — no tiene punto de
+// entrada. El codigo de abajo queda intacto a proposito: el rollback es
+// re-registrarlo, no reescribirlo.
+//
+// POR QUE. SP pasa a ser la unica fuente de verdad del backlog. Espejar a
+// backlog-<slug>.md y borrar de SP contradice ese modelo. Ademas la excepcion
+// ESTRUCTURA_PROJECT_ID borraba SIN espejo asumiendo que /dia recrea las
+// rutinas, y /dia no corre desde 2026-06-23: del log salieron 31 borrados sin
+// espejo, 5 de ellos tareas unicas realmente perdidas.
+//
+// QUE PASA AHORA al desprogramar una tarea: queda en SP, activa y sin fecha.
+// No se espeja a ningun .md y no se borra. El triage es manual via
+// sp.move_to_backlog (Planificacion/scripts/sp.py).
+//
+// COMO RE-HABILITARLO (exactamente estos 4 pasos):
+//   1. En src/index.ts, descomentar el import de UnscheduleMirror.
+//   2. En src/index.ts, restaurar el bloque de wiring dentro de
+//      io.on("connection"): `const unscheduleMirror = new UnscheduleMirror(
+//      spClient);`, `unscheduleMirror.seed().catch(() => {});` y los cuatro
+//      socket.on("event:task*"). `git log -p -- src/index.ts` tiene el hunk
+//      exacto (commit de la campana propose-20260922-173950).
+//   3. `cd ~/Documents/Áreas/super-productivity-mcp && npm run build`
+//      (el daemon corre dist/index.js, no src/).
+//   4. `launchctl kickstart -k gui/$(id -u)/com.augus.super-productivity-mcp`
+//   Ademas, repoblar `_MIRRORED_PROJECTS` en
+//   ~/Documents/Áreas/Planificacion/scripts/sp.py con los 3 ids que el
+//   comentario de esa variable preserva; el mapa PROJECT_TO_BACKLOG de abajo y
+//   ese set tienen que quedar identicos.
+//
+// ============================================================================
+
 // Mirrors SP "unschedule" actions into ~/Documents/Áreas/Planificación/backlog/*.md.
 //
 // When a task's dueDay AND dueWithTime both transition to null (from at least one

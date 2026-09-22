@@ -18,7 +18,15 @@ import { setupTagTools } from "./tools/tags.js";
 import { setupCounterTools } from "./tools/counters.js";
 import { setupDataTools } from "./tools/data.js";
 import { setupMiscTools } from "./tools/misc.js";
-import { UnscheduleMirror } from "./listeners/unschedule-mirror.js";
+// DISABLED 2026-09-22 (campaign propose-20260922-173950): el listener
+// unschedule-mirror quedo desregistrado. SP pasa a ser la unica fuente del
+// backlog, asi que desprogramar una tarea ya no la espeja a backlog-<slug>.md
+// ni la borra de SP (incluida la excepcion Estructura, que borraba sin espejo).
+// El modulo sigue intacto en src/listeners/unschedule-mirror.ts; para
+// re-habilitarlo: descomentar este import, restaurar el bloque de wiring en
+// io.on("connection") (seed + los 4 socket.on("event:task*")), npm run build y
+// launchctl kickstart -k gui/$(id -u)/com.augus.super-productivity-mcp.
+// import { UnscheduleMirror } from "./listeners/unschedule-mirror.js";
 
 function tsLog(...parts: unknown[]): void {
   console.log(`[${new Date().toISOString()}]`, ...parts);
@@ -228,8 +236,6 @@ program
 
     app.use(express.json());
 
-    const unscheduleMirror = new UnscheduleMirror(spClient);
-
     io.engine.on("connection_error", (err) => {
       tsLog(
         "Socket.IO engine connection error:",
@@ -253,34 +259,6 @@ program
         `userAgent=${userAgent || "unknown"}`,
       );
       spClient.setSocket(socket);
-
-      // Seed the unschedule mirror cache so we don't fire on tasks that were
-      // already unscheduled before the connection opened. Don't await — let it
-      // run in background so socket setup doesn't block.
-      unscheduleMirror.seed().catch(() => {});
-
-      socket.on("event:taskUpdate", (payload: unknown) => {
-        unscheduleMirror.handleEvent(payload).catch((err) => {
-          tsLog("unschedule mirror handler error:", oneLine(err));
-        });
-      });
-
-      // Cache-only handlers. These don't trigger mirror writes — they keep
-      // the listener's `{taskId → scheduled state}` cache fresh so that
-      // transitions on freshly-created/deleted/drag-to-Today'd tasks are
-      // detected correctly when the next taskUpdate arrives.
-      socket.on("event:taskCreated", (payload: unknown) => {
-        try { unscheduleMirror.handleTaskCreated(payload); }
-        catch (err) { tsLog("taskCreated handler error:", oneLine(err)); }
-      });
-      socket.on("event:taskDelete", (payload: unknown) => {
-        try { unscheduleMirror.handleTaskDelete(payload); }
-        catch (err) { tsLog("taskDelete handler error:", oneLine(err)); }
-      });
-      socket.on("event:taskScheduled", (payload: unknown) => {
-        try { unscheduleMirror.handleTaskScheduledForToday(payload); }
-        catch (err) { tsLog("taskScheduled handler error:", oneLine(err)); }
-      });
 
       // Heartbeat events: always logged. They're cheap (one per connect/setup)
       // and tell us at a glance which plugin code is running.

@@ -15,7 +15,16 @@ Sleeps between socket-driven steps to give the listener time to process events.
 
 Run: python3 scripts/test_unschedule_mirror.py
 Cost: ~30s, creates and cleans up test tasks in real SP projects.
+
+SKIPPED SINCE 2026-09-22 (campaign propose-20260922-173950). El listener
+unschedule-mirror quedo desregistrado en src/index.ts (SP es ahora la unica
+fuente del backlog), asi que los 5 tests E2E de abajo fallarian todos: no hay
+nada escuchando event:taskUpdate. El guard de main() lo detecta y sale 0 con
+SKIP en vez de reportar 5 falsos negativos. Si el mirror se re-habilita (ver el
+banner de src/listeners/unschedule-mirror.ts), el guard lo nota solo y los
+tests vuelven a correr sin tocar este archivo.
 """
+import os
 import sys
 import time
 import re
@@ -253,7 +262,42 @@ def test_unmapped_project() -> dict:
     return {"name": "T4 Unmapped project", "passed": ok_log and ok_stays}
 
 
+# Campana propose-20260922-173950: el mirror esta apagado (wiring removido de
+# src/index.ts). Estos tests son E2E contra el listener, asi que sin listener no
+# hay nada que testear. El guard lee el wiring real en vez de hardcodear
+# "apagado", para que re-habilitarlo no requiera volver a editar este archivo.
+MIRROR_WIRING_RE = re.compile(r'^\s*socket\.on\("event:taskUpdate"', re.M)
+INDEX_TS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "index.ts")
+
+
+def mirror_is_registered() -> bool:
+    """True si src/index.ts todavia registra el handler event:taskUpdate."""
+    try:
+        with open(INDEX_TS, encoding="utf-8") as f:
+            return bool(MIRROR_WIRING_RE.search(f.read()))
+    except OSError:
+        # No se pudo leer el wiring: asumimos apagado y saltamos, que es el
+        # estado desde 2026-09-22. Forzar con RUN_UNSCHEDULE_MIRROR_TESTS=1.
+        return False
+
+
 def main():
+    if not mirror_is_registered() and os.environ.get("RUN_UNSCHEDULE_MIRROR_TESTS") != "1":
+        print(
+            "SKIP: unschedule-mirror esta DESACTIVADO desde 2026-09-22 "
+            "(campaign propose-20260922-173950).\n"
+            "      El wiring de src/index.ts fue removido: SP es ahora la unica "
+            "fuente del backlog y\n"
+            "      desprogramar una tarea ya no la espeja a backlog-<slug>.md ni "
+            "la borra de SP.\n"
+            "      Estos 5 tests E2E no tienen listener contra el cual correr.\n"
+            "      Re-habilitacion: ver el banner de "
+            "src/listeners/unschedule-mirror.ts.\n"
+            "      Forzar de todos modos: RUN_UNSCHEDULE_MIRROR_TESTS=1 python3 "
+            "scripts/test_unschedule_mirror.py"
+        )
+        sys.exit(0)
+
     results = []
     results.append(test_inbox_skip())
     results.append(test_resources_skip())
