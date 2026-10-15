@@ -432,6 +432,12 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
         issueId: nullableStr.describe('Linked issue ID; null clears'),
         issueProviderId: nullableStr.describe('Issue provider ID; null clears'),
         issuePoints: nullableNum.describe('Story points for linked issue; null clears'),
+        waiting: z
+          .union([z.object({}).passthrough(), z.null()])
+          .optional()
+          .describe(
+            "The SP fork's Waiting page data (an object whose keys are all optional: state, person, slack, message, cadenceDays, nextPingDay, ...), replacing the task's whole `waiting` field; null clears it. Passed to the app unchanged, which validates it: read the task's current `waiting` first and write back the merged object.",
+          ),
       },
     },
     async ({ taskId, ...raw }) => {
