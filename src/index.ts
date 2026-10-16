@@ -232,6 +232,10 @@ program
       pingTimeout,
       pingInterval,
       connectTimeout: parseInt(process.env.SOCKET_IO_CONNECT_TIMEOUT_MS || "120000", 10),
+      // The plugin answers tasks:get with every task in one message. socket.io's default
+      // limit (1 MB) closed the socket with "Max payload size exceeded" once the fork's
+      // task list outgrew it (2026-10-16), so every list_tasks call timed out. Localhost only.
+      maxHttpBufferSize: parseInt(process.env.SOCKET_IO_MAX_BUFFER_BYTES || "67108864", 10),
     });
 
     app.use(express.json());
