@@ -2,7 +2,7 @@
   "name": "MCP Bridge",
   "id": "mcp-bridge",
   "manifestVersion": 1,
-  "version": "1.0.6",
+  "version": "1.0.8",
   "minSupVersion": "14.0.0",
   "description": "Bridge between Super Productivity and MCP servers",
   "hooks": [
@@ -17,13 +17,8 @@
     "projects:read",
     "projects:write",
     "tags:read",
-    "tags:write",
-    "nodeExecution"
+    "tags:write"
   ],
-  "nodeScriptConfig": {
-    "allowedPaths": ["./plugin.js", "./plugin-logic.js", "./socket.io.min.js"],
-    "timeout": 30000,
-    "memoryLimit": "256MB"
-  },
+  "iFrame": true,
   "sidePanel": false
 }

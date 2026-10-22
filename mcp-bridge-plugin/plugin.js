@@ -50,7 +50,7 @@
       );
       // Heartbeat: emit version stamp on connect. Server logs this so we can
       // always tell which plugin code is actually running. Cheap; do not remove.
-      socket.emit("event:debug:startup", { version: "1.0.6", socketId: socket.id });
+      socket.emit("event:debug:startup", { version: "1.0.8", socketId: socket.id });
     });
 
     socket.on("disconnect", function (reason, details) {
@@ -351,6 +351,59 @@
         .catch(function (err) { callback({ error: err.message || String(err) }); });
     });
 
+    // Single-tag add/remove. Read-modify-write so the task's other tags are
+    // preserved (api.updateTask replaces the whole tagIds array). Uses
+    // getAppState to resolve a task by id even when it's outside the active
+    // work context (api.getTasks only returns the current context).
+    function tagOp(taskId, tagId, mode, callback) {
+      if (typeof api.getAppState !== "function") {
+        callback({ error: "getAppState is not available on this Super Productivity version" });
+        return;
+      }
+      api.getAppState()
+        .then(function (state) {
+          var t = state && state.tasks ? state.tasks[taskId] : null;
+          if (!t) { callback({ error: "Task not found: " + taskId }); return; }
+          var current = Array.isArray(t.tagIds) ? t.tagIds.slice() : [];
+          var has = current.indexOf(tagId) !== -1;
+          var next;
+          if (mode === "add") {
+            if (has) { callback({ success: true, tagIds: current, noop: true }); return; }
+            next = current.concat([tagId]);
+          } else {
+            if (!has) { callback({ success: true, tagIds: current, noop: true }); return; }
+            next = current.filter(function (x) { return x !== tagId; });
+          }
+          api.updateTask(taskId, { tagIds: next })
+            .then(function () { callback({ success: true, tagIds: next }); })
+            .catch(function (err) { callback({ error: err.message || String(err) }); });
+        })
+        .catch(function (err) { callback({ error: err.message || String(err) }); });
+    }
+
+    socket.on("tasks:addTag", function (data, callback) {
+      tagOp(data.taskId, data.tagId, "add", callback);
+    });
+
+    socket.on("tasks:removeTag", function (data, callback) {
+      tagOp(data.taskId, data.tagId, "remove", callback);
+    });
+
+    // Recurring-task configs (cadence, day-of-week, default estimate). Read
+    // from app state; api has no dedicated getter.
+    socket.on("repeatCfgs:get", function (data, callback) {
+      if (typeof api.getAppState !== "function") {
+        callback({ error: "getAppState is not available on this Super Productivity version" });
+        return;
+      }
+      api.getAppState()
+        .then(function (state) {
+          var cfgs = state && state.taskRepeatCfgs ? state.taskRepeatCfgs : {};
+          callback(Object.keys(cfgs).map(function (k) { return cfgs[k]; }));
+        })
+        .catch(function (err) { callback({ error: err.message || String(err) }); });
+    });
+
     // --- Event Hooks (Plugin -> Server) ---
     //
     // We register four hooks. The first three give the listener enough
@@ -419,9 +472,23 @@
 
     // Lightweight summary so the server log shows which hooks SP accepted.
     // Helps diagnose breakage on SP version upgrades.
-    setTimeout(function () {
+    var hooksReportTimer = setTimeout(function () {
       socket.emit("event:debug:hooksRegistered", hookRegistration);
     }, 1500);
+
+    // Renderer cleanup. SP >= 18.12 runs sideloaded plugins as code in the
+    // renderer (not as a Node child process), so this socket and its timers
+    // outlive the plugin unless we tear them down on unload — disabling or
+    // reloading the plugin would otherwise leak a live Socket.IO connection.
+    // onUnload is absent on older API typings, so guard before calling.
+    if (typeof api.onUnload === "function") {
+      api.onUnload(function () {
+        log("log", "onUnload: closing socket + clearing timers");
+        try { clearTimeout(hooksReportTimer); } catch (e) {}
+        try { socket.removeAllListeners(); } catch (e) {}
+        try { socket.disconnect(); } catch (e) {}
+      });
+    }
   }
 
   // Init

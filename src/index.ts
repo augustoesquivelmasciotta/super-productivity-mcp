@@ -27,6 +27,7 @@ import { setupMiscTools } from "./tools/misc.js";
 // io.on("connection") (seed + los 4 socket.on("event:task*")), npm run build y
 // launchctl kickstart -k gui/$(id -u)/com.augus.super-productivity-mcp.
 // import { UnscheduleMirror } from "./listeners/unschedule-mirror.js";
+import { setupDiagnosticsTools } from "./tools/diagnostics.js";
 
 function tsLog(...parts: unknown[]): void {
   console.log(`[${new Date().toISOString()}]`, ...parts);
@@ -48,12 +49,40 @@ function oneLine(value: unknown): string {
 
 class SocketSuperProductivityClient {
     private socket: Socket | null = null;
-  
-    setSocket(socket: Socket) {
+    private connectedAt: number | null = null;
+    private commandCount = 0;
+    private lastStartup: any = null;
+    private lastStartupAt: number | null = null;
+    private lastHooks: any = null;
+
+    setSocket(socket: Socket | null) {
       this.socket = socket;
+      this.connectedAt = socket ? Date.now() : null;
+    }
+
+    recordStartup(payload: any) {
+      this.lastStartup = payload;
+      this.lastStartupAt = Date.now();
+    }
+
+    recordHooks(payload: any) {
+      this.lastHooks = payload;
+    }
+
+    getConnectionStatus() {
+      return {
+        connected: !!this.socket,
+        socketId: this.socket ? this.socket.id : null,
+        connectedAt: this.connectedAt,
+        lastStartup: this.lastStartup,
+        lastStartupAt: this.lastStartupAt,
+        lastHooks: this.lastHooks,
+        commandCount: this.commandCount,
+      };
     }
   
     private async emitWithAck<T>(event: string, data?: any): Promise<T> {
+      this.commandCount++;
       if (!this.socket) {
         throw new Error(
           "Super Productivity plugin is not connected. Ensure the MCP Bridge plugin is installed and enabled.",
@@ -205,6 +234,18 @@ class SocketSuperProductivityClient {
     async focusWindow(): Promise<void> {
       return this.emitWithAck("window:focus");
     }
+
+    async addTagToTask(taskId: string, tagId: string): Promise<any> {
+      return this.emitWithAck("tasks:addTag", { taskId, tagId });
+    }
+
+    async removeTagFromTask(taskId: string, tagId: string): Promise<any> {
+      return this.emitWithAck("tasks:removeTag", { taskId, tagId });
+    }
+
+    async getTaskRepeatCfgs(): Promise<any[]> {
+      return this.emitWithAck("repeatCfgs:get");
+    }
   }
 
 const program = new Command();
@@ -240,6 +281,21 @@ program
 
     app.use(express.json());
 
+    const SERVER_STARTED_AT = Date.now();
+    // Lightweight, unauthenticated stats endpoint for the in-SP dashboard
+    // (plugin index.html polls it over HTTP). Bound to the same localhost host
+    // as the MCP endpoint; exposes only connection/heartbeat metadata.
+    app.get("/stats", (_req, res) => {
+      res.header("Access-Control-Allow-Origin", "*");
+      const status = spClient.getConnectionStatus();
+      res.json({
+        ...status,
+        serverStartedAt: SERVER_STARTED_AT,
+        uptimeMs: Date.now() - SERVER_STARTED_AT,
+        port,
+      });
+    });
+
     io.engine.on("connection_error", (err) => {
       tsLog(
         "Socket.IO engine connection error:",
@@ -267,9 +323,11 @@ program
       // Heartbeat events: always logged. They're cheap (one per connect/setup)
       // and tell us at a glance which plugin code is running.
       socket.on("event:debug:startup", (payload: unknown) => {
+        spClient.recordStartup(payload);
         tsLog(`[plugin-heartbeat] startup ${oneLine(payload)}`);
       });
       socket.on("event:debug:hooksRegistered", (payload: unknown) => {
+        spClient.recordHooks(payload);
         tsLog(`[plugin-heartbeat] hooks registered ${oneLine(payload)}`);
       });
 
@@ -371,6 +429,7 @@ program
         setupCounterTools(server, spClient);
         setupDataTools(server, spClient);
         setupMiscTools(server, spClient);
+        setupDiagnosticsTools(server, spClient);
 
         await server.connect(transport);
       } else {

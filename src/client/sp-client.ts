@@ -157,4 +157,26 @@ export class SuperProductivityClient {
   async focusWindow(): Promise<void> {
     await this.client.post("/api/window/focus");
   }
+
+  // The methods below are served at runtime by the Socket.IO client in
+  // index.ts (this axios class is the type contract only). Bodies kept
+  // axios-shaped for coherence; they are not exercised.
+  async addTagToTask(taskId: string, tagId: string): Promise<any> {
+    const response = await this.client.post(`/api/tasks/${taskId}/tags/${tagId}`);
+    return response.data.data;
+  }
+
+  async removeTagFromTask(taskId: string, tagId: string): Promise<any> {
+    const response = await this.client.delete(`/api/tasks/${taskId}/tags/${tagId}`);
+    return response.data.data;
+  }
+
+  async getTaskRepeatCfgs(): Promise<any[]> {
+    const response = await this.client.get("/api/task-repeat-cfgs");
+    return response.data.data;
+  }
+
+  getConnectionStatus(): Record<string, unknown> {
+    return { connected: false, note: "HTTP client has no socket bridge" };
+  }
 }

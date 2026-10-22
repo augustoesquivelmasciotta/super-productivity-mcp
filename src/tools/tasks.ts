@@ -34,6 +34,25 @@ function mapTaskForList(t: Record<string, unknown>) {
   return o;
 }
 
+function localToday(): string {
+  // YYYY-MM-DD in the server's local timezone (en-CA formats as ISO date)
+  return new Date().toLocaleDateString('en-CA');
+}
+
+function localDate(ts: number): string {
+  return new Date(ts).toLocaleDateString('en-CA');
+}
+
+function projectTask(t: Record<string, unknown>, fields: string[]) {
+  const o: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (Object.prototype.hasOwnProperty.call(t, f) && t[f] !== undefined) {
+      o[f] = t[f];
+    }
+  }
+  return o;
+}
+
 const CREATE_FIELDS_FROM_SOURCE = [
   'notes',
   'timeEstimate',
@@ -178,19 +197,38 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
   server.registerTool(
     'list_tasks',
     {
-      description: 'Lists tasks with optional filtering by project, archived status, or current context only.',
+      description:
+        'Lists tasks with filtering by project, tag, archived/done status, current context, and triage filters (overdue, unscheduled, planned-for-today, parents-only, recurring-only). Supports case-insensitive search over title/notes and field projection.',
       inputSchema: {
         projectId: z.string().optional().describe('Filter tasks by project ID'),
+        tagId: z.string().optional().describe('Filter to tasks carrying this tag ID'),
         includeArchived: z
           .boolean()
           .default(false)
           .describe(
             'When true, merges in tasks from PluginAPI.getArchivedTasks (requires compatible Super Productivity + bridge).',
           ),
+        includeDone: z.boolean().default(true).describe('When false, drops completed (isDone) tasks'),
         currentContextOnly: z.boolean().default(false).describe('Only return tasks from the current work context'),
+        search: z.string().optional().describe('Case-insensitive substring match over title and notes'),
+        parentsOnly: z.boolean().default(false).describe('Return only top-level tasks (exclude subtasks)'),
+        overdue: z
+          .boolean()
+          .default(false)
+          .describe('Return only not-done tasks past due (dueDay before today, or dueWithTime before now)'),
+        unscheduled: z.boolean().default(false).describe('Return only tasks with no dueDay and no dueWithTime'),
+        plannedForToday: z
+          .boolean()
+          .default(false)
+          .describe('Return only tasks whose plannedAt falls on today (server local date)'),
+        recurringOnly: z.boolean().default(false).describe('Return only recurring tasks (those with a repeatCfgId)'),
+        fields: z
+          .array(z.string())
+          .optional()
+          .describe('Return only these fields per task (e.g. ["id","title","dueDay"]). Omit for the default field set.'),
       },
     },
-    async ({ projectId, includeArchived, currentContextOnly }) => {
+    async ({ projectId, tagId, includeArchived, includeDone, currentContextOnly, search, parentsOnly, overdue, unscheduled, plannedForToday, recurringOnly, fields }) => {
       try {
         let tasks = currentContextOnly
           ? await client.getCurrentContextTasks()
@@ -216,15 +254,54 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
           }
         }
 
-        let filteredTasks = tasks;
-        if (projectId) {
-          filteredTasks = tasks.filter((t) => t.projectId === projectId);
+        let filtered = tasks as Array<Record<string, unknown>>;
+        if (projectId) filtered = filtered.filter((t) => t.projectId === projectId);
+        if (tagId) {
+          filtered = filtered.filter(
+            (t) => Array.isArray(t.tagIds) && (t.tagIds as string[]).includes(tagId),
+          );
+        }
+        if (!includeDone) filtered = filtered.filter((t) => !t.isDone);
+        if (parentsOnly) filtered = filtered.filter((t) => !t.parentId);
+        if (recurringOnly) {
+          filtered = filtered.filter((t) => t.repeatCfgId != null && t.repeatCfgId !== '');
+        }
+        if (unscheduled) filtered = filtered.filter((t) => !t.dueDay && !t.dueWithTime);
+        if (search) {
+          const q = search.toLowerCase();
+          filtered = filtered.filter(
+            (t) =>
+              String(t.title ?? '').toLowerCase().includes(q) ||
+              String(t.notes ?? '').toLowerCase().includes(q),
+          );
+        }
+        if (overdue) {
+          const today = localToday();
+          const now = Date.now();
+          filtered = filtered.filter((t) => {
+            if (t.isDone) return false;
+            const dd = typeof t.dueDay === 'string' ? t.dueDay : null;
+            const dwt = typeof t.dueWithTime === 'number' ? t.dueWithTime : null;
+            return (dd != null && dd < today) || (dwt != null && dwt < now);
+          });
+        }
+        if (plannedForToday) {
+          const today = localToday();
+          filtered = filtered.filter((t) => {
+            const pa = typeof t.plannedAt === 'number' ? t.plannedAt : null;
+            return pa != null && localDate(pa) === today;
+          });
         }
 
+        const projectFields = fields && fields.length > 0 ? fields : null;
+        const shaped = filtered.map((t) =>
+          projectFields ? projectTask(t, projectFields) : mapTaskForList(t),
+        );
+
         const output = {
-          count: filteredTasks.length,
+          count: shaped.length,
           ...(archivedWarning ? { warning: archivedWarning } : {}),
-          tasks: filteredTasks.map((t) => mapTaskForList(t as Record<string, unknown>)),
+          tasks: shaped,
         };
 
         return {
@@ -626,6 +703,96 @@ export function setupTaskTools(server: McpServer, client: SuperProductivityClien
                 message: `Reordered ${taskIds.length} tasks`,
               }),
             },
+          ],
+        };
+      } catch (error: unknown) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    'add_tag_to_task',
+    {
+      description:
+        'Adds a single tag to a task without disturbing its other tags (read-modify-write, idempotent). Avoids the tagIds-clobber footgun of update_task, which replaces the whole array.',
+      inputSchema: {
+        taskId: z.string().describe('Task ID'),
+        tagId: z.string().describe('Tag ID to add'),
+      },
+    },
+    async ({ taskId, tagId }) => {
+      try {
+        const result = await client.addTagToTask(taskId, tagId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, ...result }) }],
+        };
+      } catch (error: unknown) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    'remove_tag_from_task',
+    {
+      description:
+        'Removes a single tag from a task without disturbing its other tags (read-modify-write, idempotent).',
+      inputSchema: {
+        taskId: z.string().describe('Task ID'),
+        tagId: z.string().describe('Tag ID to remove'),
+      },
+    },
+    async ({ taskId, tagId }) => {
+      try {
+        const result = await client.removeTagFromTask(taskId, tagId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, ...result }) }],
+        };
+      } catch (error: unknown) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_task_repeat_cfgs',
+    {
+      description:
+        'Lists all recurring-task configurations (repeat cadence, day-of-week, default estimate, etc.) from SP app state.',
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const cfgs = await client.getTaskRepeatCfgs();
+        const list = Array.isArray(cfgs) ? cfgs : [];
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify({ count: list.length, repeatCfgs: list }, null, 2) },
           ],
         };
       } catch (error: unknown) {
