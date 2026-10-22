@@ -176,6 +176,27 @@ export class SuperProductivityClient {
     return response.data.data;
   }
 
+  async addTaskRepeatCfg(
+    taskId: string,
+    cfg: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.client.post(`/api/tasks/${taskId}/repeat-cfg`, cfg);
+    return response.data.data;
+  }
+
+  async updateTaskRepeatCfg(
+    repeatCfgId: string,
+    changes: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.client.patch(`/api/task-repeat-cfgs/${repeatCfgId}`, changes);
+    return response.data.data;
+  }
+
+  async deleteTaskRepeatCfg(repeatCfgId: string): Promise<Record<string, unknown>> {
+    const response = await this.client.delete(`/api/task-repeat-cfgs/${repeatCfgId}`);
+    return response.data.data;
+  }
+
   getConnectionStatus(): Record<string, unknown> {
     return { connected: false, note: "HTTP client has no socket bridge" };
   }

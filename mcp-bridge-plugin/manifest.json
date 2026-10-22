@@ -2,7 +2,7 @@
   "name": "MCP Bridge",
   "id": "mcp-bridge",
   "manifestVersion": 1,
-  "version": "1.0.8",
+  "version": "1.0.9",
   "minSupVersion": "14.0.0",
   "description": "Bridge between Super Productivity and MCP servers",
   "hooks": [

@@ -28,6 +28,7 @@ import { setupMiscTools } from "./tools/misc.js";
 // launchctl kickstart -k gui/$(id -u)/com.augus.super-productivity-mcp.
 // import { UnscheduleMirror } from "./listeners/unschedule-mirror.js";
 import { setupDiagnosticsTools } from "./tools/diagnostics.js";
+import { setupRepeatCfgTools } from "./tools/repeat-cfgs.js";
 
 function tsLog(...parts: unknown[]): void {
   console.log(`[${new Date().toISOString()}]`, ...parts);
@@ -246,6 +247,24 @@ class SocketSuperProductivityClient {
     async getTaskRepeatCfgs(): Promise<any[]> {
       return this.emitWithAck("repeatCfgs:get");
     }
+
+    async addTaskRepeatCfg(
+      taskId: string,
+      cfg: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      return this.emitWithAck("repeatCfgs:create", { taskId, cfg });
+    }
+
+    async updateTaskRepeatCfg(
+      repeatCfgId: string,
+      changes: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      return this.emitWithAck("repeatCfgs:update", { repeatCfgId, changes });
+    }
+
+    async deleteTaskRepeatCfg(repeatCfgId: string): Promise<Record<string, unknown>> {
+      return this.emitWithAck("repeatCfgs:delete", { repeatCfgId });
+    }
   }
 
 const program = new Command();
@@ -430,6 +449,7 @@ program
         setupDataTools(server, spClient);
         setupMiscTools(server, spClient);
         setupDiagnosticsTools(server, spClient);
+        setupRepeatCfgTools(server, spClient);
 
         await server.connect(transport);
       } else {

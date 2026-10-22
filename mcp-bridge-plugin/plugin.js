@@ -50,7 +50,7 @@
       );
       // Heartbeat: emit version stamp on connect. Server logs this so we can
       // always tell which plugin code is actually running. Cheap; do not remove.
-      socket.emit("event:debug:startup", { version: "1.0.8", socketId: socket.id });
+      socket.emit("event:debug:startup", { version: "1.0.9", socketId: socket.id });
     });
 
     socket.on("disconnect", function (reason, details) {
@@ -402,6 +402,54 @@
           callback(Object.keys(cfgs).map(function (k) { return cfgs[k]; }));
         })
         .catch(function (err) { callback({ error: err.message || String(err) }); });
+    });
+
+    // Recurring-task config writes (1.0.9). The SP fork's plugin API does the
+    // work with the Repeat dialog's defaults and checks (addTaskRepeatCfg,
+    // updateTaskRepeatCfg, deleteTaskRepeatCfg); each answer carries the
+    // config as SP stored it, read back from app state.
+    function repeatCfgWrite(method, args, callback, answer) {
+      if (typeof api[method] !== "function") {
+        callback({
+          error: method + " is not available in this Super Productivity build " +
+            "(the SP fork adds it with its plugin-api-task-repeat-cfg feature)",
+        });
+        return;
+      }
+      Promise.resolve()
+        .then(function () { return api[method].apply(api, args); })
+        .then(answer)
+        .then(function (result) { callback(result); })
+        .catch(function (err) { callback({ error: (err && err.message) || String(err) }); });
+    }
+
+    function storedRepeatCfg(repeatCfgId) {
+      return api.getAppState().then(function (state) {
+        var cfgs = state && state.taskRepeatCfgs ? state.taskRepeatCfgs : {};
+        return cfgs[repeatCfgId] || null;
+      });
+    }
+
+    socket.on("repeatCfgs:create", function (data, callback) {
+      repeatCfgWrite("addTaskRepeatCfg", [data.taskId, data.cfg || {}], callback, function (repeatCfgId) {
+        return storedRepeatCfg(repeatCfgId).then(function (cfg) {
+          return { repeatCfgId: repeatCfgId, repeatCfg: cfg };
+        });
+      });
+    });
+
+    socket.on("repeatCfgs:update", function (data, callback) {
+      repeatCfgWrite("updateTaskRepeatCfg", [data.repeatCfgId, data.changes || {}], callback, function () {
+        return storedRepeatCfg(data.repeatCfgId).then(function (cfg) {
+          return { repeatCfgId: data.repeatCfgId, repeatCfg: cfg };
+        });
+      });
+    });
+
+    socket.on("repeatCfgs:delete", function (data, callback) {
+      repeatCfgWrite("deleteTaskRepeatCfg", [data.repeatCfgId], callback, function () {
+        return { repeatCfgId: data.repeatCfgId, deleted: true };
+      });
     });
 
     // --- Event Hooks (Plugin -> Server) ---
