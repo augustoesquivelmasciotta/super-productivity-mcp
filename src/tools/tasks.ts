@@ -19,6 +19,7 @@ const LIST_TASK_FIELDS = [
   'tagIds',
   'subTaskIds',
   'parentId',
+  'repeatCfgId',
   'created',
   'doneOn',
   'isArchived',
