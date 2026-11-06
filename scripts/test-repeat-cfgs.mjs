@@ -199,10 +199,11 @@ const api = {
 };
 const plugin = loadPlugin(api);
 
-// The heartbeat says 1.0.9, which is what the server's check reads.
+// The heartbeat carries the version in manifest.json, which is what the server's check reads.
+const manifest = JSON.parse(fs.readFileSync(path.join(here, '..', 'mcp-bridge-plugin', 'manifest.json'), 'utf8'));
 plugin.handlers.connect();
 assert.deepEqual(plain(plugin.emitted.find((e) => e.event === 'event:debug:startup').payload), {
-  version: '1.0.9',
+  version: manifest.version,
   socketId: 'sock-1',
 });
 

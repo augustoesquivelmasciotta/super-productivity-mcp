@@ -29,6 +29,8 @@ import { setupMiscTools } from "./tools/misc.js";
 // import { UnscheduleMirror } from "./listeners/unschedule-mirror.js";
 import { setupDiagnosticsTools } from "./tools/diagnostics.js";
 import { setupRepeatCfgTools } from "./tools/repeat-cfgs.js";
+import { setupSectionTools } from "./tools/sections.js";
+import type { MoveToSectionOptions, SpSection } from "./client/sp-client.js";
 
 function tsLog(...parts: unknown[]): void {
   console.log(`[${new Date().toISOString()}]`, ...parts);
@@ -265,6 +267,43 @@ class SocketSuperProductivityClient {
     async deleteTaskRepeatCfg(repeatCfgId: string): Promise<Record<string, unknown>> {
       return this.emitWithAck("repeatCfgs:delete", { repeatCfgId });
     }
+
+    async getSections(contextId?: string): Promise<SpSection[]> {
+      return this.emitWithAck("sections:get", { ...(contextId !== undefined && { contextId }) });
+    }
+
+    async addSection(title: string, contextId: string, contextType?: string): Promise<string> {
+      return this.emitWithAck("sections:create", {
+        title,
+        contextId,
+        ...(contextType !== undefined && { contextType }),
+      });
+    }
+
+    async updateSection(sectionId: string, changes: Record<string, unknown>): Promise<void> {
+      return this.emitWithAck("sections:update", { sectionId, changes });
+    }
+
+    async deleteSection(sectionId: string): Promise<void> {
+      return this.emitWithAck("sections:delete", { sectionId });
+    }
+
+    async reorderSections(contextId: string, sectionIds: string[]): Promise<void> {
+      return this.emitWithAck("sections:reorder", { contextId, sectionIds });
+    }
+
+    // sectionId stays in the payload when null (null takes the task out of its section).
+    async moveTaskToSection(
+      taskId: string,
+      sectionId: string | null,
+      options?: MoveToSectionOptions,
+    ): Promise<void> {
+      return this.emitWithAck("sections:moveTask", {
+        taskId,
+        sectionId,
+        ...(options !== undefined && { options }),
+      });
+    }
   }
 
 const program = new Command();
@@ -450,6 +489,7 @@ program
         setupMiscTools(server, spClient);
         setupDiagnosticsTools(server, spClient);
         setupRepeatCfgTools(server, spClient);
+        setupSectionTools(server, spClient);
 
         await server.connect(transport);
       } else {

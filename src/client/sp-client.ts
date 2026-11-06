@@ -5,6 +5,22 @@ export interface SPClientConfig {
   apiKey?: string;
 }
 
+/** A section as the SP fork's plugin API returns it (getSections). */
+export interface SpSection {
+  id: string;
+  contextId: string;
+  contextType: "PROJECT" | "TAG";
+  title: string;
+  isExpanded: boolean;
+  taskIds: string[];
+}
+
+/** moveTaskToSection's options: afterTaskId omitted = end of the section, null = its top. */
+export interface MoveToSectionOptions {
+  afterTaskId?: string | null;
+  contextId?: string;
+}
+
 export class SuperProductivityClient {
   private client: AxiosInstance;
 
@@ -195,6 +211,38 @@ export class SuperProductivityClient {
   async deleteTaskRepeatCfg(repeatCfgId: string): Promise<Record<string, unknown>> {
     const response = await this.client.delete(`/api/task-repeat-cfgs/${repeatCfgId}`);
     return response.data.data;
+  }
+
+  async getSections(contextId?: string): Promise<SpSection[]> {
+    const response = await this.client.get("/api/sections", {
+      params: contextId !== undefined ? { contextId } : undefined,
+    });
+    return response.data.data;
+  }
+
+  async addSection(title: string, contextId: string, contextType?: string): Promise<string> {
+    const response = await this.client.post("/api/sections", { title, contextId, contextType });
+    return response.data.sectionId;
+  }
+
+  async updateSection(sectionId: string, changes: Record<string, unknown>): Promise<void> {
+    await this.client.patch(`/api/sections/${sectionId}`, changes);
+  }
+
+  async deleteSection(sectionId: string): Promise<void> {
+    await this.client.delete(`/api/sections/${sectionId}`);
+  }
+
+  async reorderSections(contextId: string, sectionIds: string[]): Promise<void> {
+    await this.client.post("/api/sections/reorder", { contextId, sectionIds });
+  }
+
+  async moveTaskToSection(
+    taskId: string,
+    sectionId: string | null,
+    options?: MoveToSectionOptions,
+  ): Promise<void> {
+    await this.client.post(`/api/tasks/${taskId}/section`, { sectionId, options });
   }
 
   getConnectionStatus(): Record<string, unknown> {

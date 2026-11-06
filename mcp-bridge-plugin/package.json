@@ -1,6 +1,6 @@
 {
   "name": "mcp-bridge-plugin",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Bridge between Super Productivity and MCP servers",
   "main": "dist/plugin.js",
   "scripts": {

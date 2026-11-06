@@ -50,7 +50,7 @@
       );
       // Heartbeat: emit version stamp on connect. Server logs this so we can
       // always tell which plugin code is actually running. Cheap; do not remove.
-      socket.emit("event:debug:startup", { version: "1.0.9", socketId: socket.id });
+      socket.emit("event:debug:startup", { version: "1.0.10", socketId: socket.id });
     });
 
     socket.on("disconnect", function (reason, details) {
@@ -450,6 +450,65 @@
       repeatCfgWrite("deleteTaskRepeatCfg", [data.repeatCfgId], callback, function () {
         return { repeatCfgId: data.repeatCfgId, deleted: true };
       });
+    });
+
+    // Sections (1.0.10): the groups of a project's task list, and of Today. The
+    // SP fork's plugin API does the work with the work view's own rules
+    // (getSections, addSection, updateSection, deleteSection, reorderSections,
+    // moveTaskToSection) and rejects with a plain message when it refuses; that
+    // message goes back to the server unchanged. The answers stay thin (the new
+    // id, or { success: true }): the MCP tools read the sections back with
+    // sections:get to show the result.
+    function sectionsCall(method, args, callback, answer) {
+      if (typeof api[method] !== "function") {
+        callback({
+          error: method + " is not available in this Super Productivity build " +
+            "(the SP fork adds it with its plugin-api-sections feature)",
+        });
+        return;
+      }
+      Promise.resolve()
+        .then(function () { return api[method].apply(api, args); })
+        .then(answer)
+        .then(function (result) { callback(result); })
+        .catch(function (err) { callback({ error: (err && err.message) || String(err) }); });
+    }
+
+    function sectionsAsIs(result) { return result; }
+    function sectionsDone() { return { success: true }; }
+
+    socket.on("sections:get", function (data, callback) {
+      var d = data || {};
+      sectionsCall("getSections", d.contextId != null ? [d.contextId] : [], callback, sectionsAsIs);
+    });
+
+    socket.on("sections:create", function (data, callback) {
+      var d = data || {};
+      var args = [d.title, d.contextId];
+      if (d.contextType != null) args.push(d.contextType);
+      sectionsCall("addSection", args, callback, sectionsAsIs);
+    });
+
+    socket.on("sections:update", function (data, callback) {
+      var d = data || {};
+      sectionsCall("updateSection", [d.sectionId, d.changes || {}], callback, sectionsDone);
+    });
+
+    socket.on("sections:delete", function (data, callback) {
+      var d = data || {};
+      sectionsCall("deleteSection", [d.sectionId], callback, sectionsDone);
+    });
+
+    // sectionId: null takes the task out of its section; options keeps afterTaskId: null
+    // (the top of the section) apart from an omitted afterTaskId (the end).
+    socket.on("sections:moveTask", function (data, callback) {
+      var d = data || {};
+      sectionsCall("moveTaskToSection", [d.taskId, d.sectionId, d.options || {}], callback, sectionsDone);
+    });
+
+    socket.on("sections:reorder", function (data, callback) {
+      var d = data || {};
+      sectionsCall("reorderSections", [d.contextId, d.sectionIds], callback, sectionsDone);
     });
 
     // --- Event Hooks (Plugin -> Server) ---
