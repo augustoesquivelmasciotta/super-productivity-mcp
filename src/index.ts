@@ -272,11 +272,17 @@ class SocketSuperProductivityClient {
       return this.emitWithAck("sections:get", { ...(contextId !== undefined && { contextId }) });
     }
 
-    async addSection(title: string, contextId: string, contextType?: string): Promise<string> {
+    async addSection(
+      title: string,
+      contextId: string,
+      contextType?: string,
+      parentSectionId?: string,
+    ): Promise<string> {
       return this.emitWithAck("sections:create", {
         title,
         contextId,
         ...(contextType !== undefined && { contextType }),
+        ...(parentSectionId !== undefined && { parentSectionId }),
       });
     }
 

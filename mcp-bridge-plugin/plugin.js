@@ -50,7 +50,7 @@
       );
       // Heartbeat: emit version stamp on connect. Server logs this so we can
       // always tell which plugin code is actually running. Cheap; do not remove.
-      socket.emit("event:debug:startup", { version: "1.0.10", socketId: socket.id });
+      socket.emit("event:debug:startup", { version: "1.0.11", socketId: socket.id });
     });
 
     socket.on("disconnect", function (reason, details) {
@@ -485,7 +485,11 @@
     socket.on("sections:create", function (data, callback) {
       var d = data || {};
       var args = [d.title, d.contextId];
-      if (d.contextType != null) args.push(d.contextType);
+      if (d.contextType != null || d.parentSectionId != null) {
+        args.push(d.contextType != null ? d.contextType : undefined);
+      }
+      // 1.0.11: a parent makes it a sub-section (projects only; the API refuses the rest).
+      if (d.parentSectionId != null) args.push(d.parentSectionId);
       sectionsCall("addSection", args, callback, sectionsAsIs);
     });
 

@@ -11,6 +11,9 @@ import type { MoveToSectionOptions, SpSection, SuperProductivityClient } from '.
 // letting the call wait out the socket timeout.
 
 const MIN_PLUGIN_VERSION = '1.0.10';
+// Sub-sections (a parent on create_section) need 1.0.11: an older plugin drops the parent and would
+// create a top-level section without saying so.
+const MIN_PLUGIN_VERSION_SUB_SECTIONS = '1.0.11';
 
 const versionParts = (v: string): number[] => v.split('.').map((n) => parseInt(n, 10) || 0);
 
@@ -24,12 +27,16 @@ const isOlder = (version: string, than: string): boolean => {
 };
 
 /** Throws when the connected plugin is known to predate the section handlers. */
-export function assertPluginHasSections(client: SuperProductivityClient): void {
+export function assertPluginHasSections(
+  client: SuperProductivityClient,
+  min: string = MIN_PLUGIN_VERSION,
+  what = 'sections',
+): void {
   const status = client.getConnectionStatus() as { lastStartup?: { version?: unknown } | null };
   const version = status?.lastStartup?.version;
-  if (typeof version === 'string' && isOlder(version, MIN_PLUGIN_VERSION)) {
+  if (typeof version === 'string' && isOlder(version, min)) {
     throw new Error(
-      `The MCP Bridge plugin in Super Productivity is ${version}; sections need ${MIN_PLUGIN_VERSION} or later. ` +
+      `The MCP Bridge plugin in Super Productivity is ${version}; ${what} need ${min} or later. ` +
         'Install super-productivity-mcp/mcp-bridge-plugin.zip in SP (Settings > Plugins).',
     );
   }
@@ -59,7 +66,7 @@ export function setupSectionTools(server: McpServer, client: SuperProductivityCl
     'list_sections',
     {
       description:
-        "Lists sections (the named groups of a project's task list, and of Today) in the order SP shows them. Each has id, contextId, contextType (PROJECT, or TAG for Today), title, isExpanded and taskIds (the section's stored order). Give contextId for one project or for Today; without it, every section.",
+        "Lists sections (the named groups of a project's task list, and of Today) in the order SP shows them. Each has id, contextId, contextType (PROJECT, or TAG for Today), title, parentSectionId (the section it sits inside, as the app shows it; null = top level, always null in Today), isExpanded and taskIds (the section's own tasks, in its stored order; a sub-section's tasks are listed under the sub-section, not its parent). Give contextId for one project or for Today; without it, every section.",
       inputSchema: {
         contextId: z
           .string()
@@ -88,7 +95,7 @@ export function setupSectionTools(server: McpServer, client: SuperProductivityCl
     'create_section',
     {
       description:
-        "Adds a section at the end of a project's sections (or of Today's), expanded and empty, as Add section does in the work view. Sections exist only for projects and for Today. Returns sectionId and the new section.",
+        "Adds a section at the end of a project's sections (or of Today's), expanded and empty, as Add section does in the work view. With parentSectionId it is a sub-section inside that section (projects only), placed after the parent's last sub-section, as Add sub-section does. Sections exist only for projects and for Today. Returns sectionId and the new section.",
       inputSchema: {
         title: z
           .string()
@@ -100,12 +107,22 @@ export function setupSectionTools(server: McpServer, client: SuperProductivityCl
           .describe(
             "PROJECT or TAG. Optional: derived from contextId ('TODAY' is the Today tag, any other id a project); if given it must match",
           ),
+        parentSectionId: z
+          .string()
+          .optional()
+          .describe(
+            'The section (full id, from list_sections) to create this one inside, as a sub-section. Projects only; it must be a section of the same project. Omit for a top-level section',
+          ),
       },
     },
-    async ({ title, contextId, contextType }) => {
+    async ({ title, contextId, contextType, parentSectionId }) => {
       try {
-        assertPluginHasSections(client);
-        const sectionId = await client.addSection(title, contextId, contextType);
+        if (parentSectionId !== undefined) {
+          assertPluginHasSections(client, MIN_PLUGIN_VERSION_SUB_SECTIONS, 'sub-sections');
+        } else {
+          assertPluginHasSections(client);
+        }
+        const sectionId = await client.addSection(title, contextId, contextType, parentSectionId);
         const sections = asList(await client.getSections(contextId));
         return ok({ sectionId, section: sections.find((s) => s.id === sectionId) ?? null });
       } catch (error: unknown) {
@@ -148,7 +165,7 @@ export function setupSectionTools(server: McpServer, client: SuperProductivityCl
     'delete_section',
     {
       description:
-        "Deletes a section, as its menu's Delete does but without the confirmation. Its tasks stay in their list, in no section.",
+        "Deletes a section, as its menu's Delete does but without the confirmation. Its sub-sections, at every depth, are deleted with it. The tasks of all of them stay in their list, in no section.",
       inputSchema: {
         sectionId: z.string().describe('The section to delete (full id, from list_sections)'),
       },

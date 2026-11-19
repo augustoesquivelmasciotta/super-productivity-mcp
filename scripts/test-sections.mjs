@@ -60,8 +60,8 @@ const client = {
     if (readFailsWith) throw new Error(readFailsWith);
     return clone(contextId === undefined ? sections : sections.filter((s) => s.contextId === contextId));
   },
-  addSection: async (title, contextId, contextType) => {
-    calls.push({ op: 'add', title, contextId, contextType });
+  addSection: async (title, contextId, contextType, parentSectionId) => {
+    calls.push({ op: 'add', title, contextId, contextType, ...(parentSectionId !== undefined && { parentSectionId }) });
     refuse();
     const created = section(`new-${nextId++}`, contextId, title);
     sections.push(created);
@@ -186,6 +186,23 @@ for (const title of ['', '  ']) {
   assert.equal(res.text, 'Error: A section needs a title');
 }
 failWith = null;
+// A parent makes it a sub-section: it reaches the client as the fourth argument (plugin 1.0.11).
+calls = [];
+pluginVersion = '1.0.11';
+res = await run('create_section', { title: 'TAIS', contextId: 'p1', parentSectionId: 'sA' });
+assert.equal(res.isError, false);
+assert.deepEqual(writes(), [{ op: 'add', title: 'TAIS', contextId: 'p1', contextType: undefined, parentSectionId: 'sA' }]);
+// A 1.0.10 plugin would drop the parent and make a top-level section: refused before anything is sent.
+calls = [];
+pluginVersion = '1.0.10';
+res = await run('create_section', { title: 'TAIS', contextId: 'p1', parentSectionId: 'sA' });
+assert.equal(res.isError, true);
+assert.match(res.text, /1\.0\.10; sub-sections need 1\.0\.11.*mcp-bridge-plugin\.zip/);
+assert.equal(calls.length, 0);
+// Without a parent, 1.0.10 still creates sections.
+res = await run('create_section', { title: 'Top', contextId: 'p1' });
+assert.equal(res.isError, false);
+parseFails('create_section', { title: 'x', contextId: 'p1', parentSectionId: 4 });
 parseFails('create_section', { contextId: 'p1' });
 parseFails('create_section', { title: 'x' });
 parseFails('create_section', { title: 'x', contextId: 'p1', contextType: 'project' });
@@ -468,6 +485,11 @@ assert.deepEqual(seen(apiCalls.pop()), ['addSection', 'Plans', 'p1']);
 assert.equal(answer, 'new-section-id');
 await plugin.ask('sections:create', { title: 'Focus', contextId: 'TODAY', contextType: 'TAG' });
 assert.deepEqual(seen(apiCalls.pop()), ['addSection', 'Focus', 'TODAY', 'TAG']);
+// 1.0.11: a parent goes through as the fourth argument, with contextType left undefined when not given.
+await plugin.ask('sections:create', { title: 'TAIS', contextId: 'p1', parentSectionId: 's1' });
+assert.deepEqual(seen(apiCalls.pop()), ['addSection', 'TAIS', 'p1', undefined, 's1']);
+await plugin.ask('sections:create', { title: 'TAIS', contextId: 'p1', contextType: 'PROJECT', parentSectionId: 's1' });
+assert.deepEqual(seen(apiCalls.pop()), ['addSection', 'TAIS', 'p1', 'PROJECT', 's1']);
 
 // Update: the changes as sent (false survives); none sent is an empty object.
 answer = await plugin.ask('sections:update', { sectionId: 's1', changes: { isExpanded: false } });

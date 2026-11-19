@@ -11,6 +11,8 @@ export interface SpSection {
   contextId: string;
   contextType: "PROJECT" | "TAG";
   title: string;
+  /** The parent the app shows (null = top level, always null in Today). SP fork sub-sections. */
+  parentSectionId?: string | null;
   isExpanded: boolean;
   taskIds: string[];
 }
@@ -220,8 +222,13 @@ export class SuperProductivityClient {
     return response.data.data;
   }
 
-  async addSection(title: string, contextId: string, contextType?: string): Promise<string> {
-    const response = await this.client.post("/api/sections", { title, contextId, contextType });
+  async addSection(
+    title: string,
+    contextId: string,
+    contextType?: string,
+    parentSectionId?: string,
+  ): Promise<string> {
+    const response = await this.client.post("/api/sections", { title, contextId, contextType, parentSectionId });
     return response.data.sectionId;
   }
 
